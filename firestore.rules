@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation for Product
+    function isValidProduct(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 255
+        && data.unit is string && data.unit.size() > 0 && data.unit.size() <= 30
+        && data.currentStock is number
+        && data.minStock is number;
+    }
+
+    // Validation for StockMovement
+    function isValidStockMovement(data) {
+      return data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128
+        && data.productName is string && data.productName.size() > 0 && data.productName.size() <= 255
+        && data.type in ['masuk', 'keluar', 'penyesuaian']
+        && data.quantity is number
+        && data.stockBefore is number
+        && data.stockAfter is number
+        && data.date is string && data.date.size() > 0 && data.date.size() <= 64;
+    }
+
+    // Validation for UploadBatch
+    function isValidUploadBatch(data) {
+      return data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 255
+        && data.uploadDate is string && data.uploadDate.size() > 0 && data.uploadDate.size() <= 64
+        && data.type in ['barang_masuk', 'data_penjualan']
+        && data.totalItems is number
+        && data.totalQuantity is number
+        && data.status in ['berhasil', 'sebagian', 'gagal'];
+    }
+
+    // Validation for LowStockNotification
+    function isValidLowStockNotification(data) {
+      return data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128
+        && data.productName is string && data.productName.size() > 0 && data.productName.size() <= 255
+        && data.currentStock is number
+        && data.minStock is number
+        && data.read is bool;
+    }
+
+    // Products collection
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(productId) && isValidProduct(incoming());
+      allow update: if isSignedIn() && isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isSignedIn() && isValidId(productId);
+    }
+
+    // Movements collection
+    match /movements/{movementId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(movementId) && isValidStockMovement(incoming());
+      allow update: if isSignedIn() && isValidId(movementId) && isValidStockMovement(incoming());
+      allow delete: if isSignedIn() && isValidId(movementId);
+    }
+
+    // Batches collection
+    match /batches/{batchId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(batchId) && isValidUploadBatch(incoming());
+      allow update: if isSignedIn() && isValidId(batchId) && isValidUploadBatch(incoming());
+      allow delete: if isSignedIn() && isValidId(batchId);
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(notificationId) && isValidLowStockNotification(incoming());
+      allow update: if isSignedIn() && isValidId(notificationId) && isValidLowStockNotification(incoming());
+      allow delete: if isSignedIn() && isValidId(notificationId);
+    }
+
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

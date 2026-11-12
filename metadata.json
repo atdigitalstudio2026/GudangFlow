@@ -1,0 +1,6 @@
+{
+  "name": "GudangFlow - Manajemen Inventaris & Arus Barang",
+  "description": "Sistem inventaris gudang terintegrasi dengan pembaruan otomatis via upload Excel barang masuk & keluar, pelacakan mutasi real-time, dan notifikasi stok minimum.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

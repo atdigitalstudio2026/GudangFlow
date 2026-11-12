@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Master data produk dan inventaris fisik gudang",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 255 },
+        "category": { "type": "string", "maxLength": 100 },
+        "unit": { "type": "string", "maxLength": 30 },
+        "currentStock": { "type": "number" },
+        "initialStock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "totalIncoming": { "type": "number" },
+        "totalOutgoing": { "type": "number" },
+        "lastUpdated": { "type": "string", "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["name", "unit", "currentStock", "minStock"]
+    },
+    "StockMovement": {
+      "title": "StockMovement",
+      "description": "Catatan buku mutasi arus barang masuk dan keluar",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "maxLength": 255 },
+        "type": { "type": "string", "enum": ["masuk", "keluar", "penyesuaian"] },
+        "quantity": { "type": "number" },
+        "stockBefore": { "type": "number" },
+        "stockAfter": { "type": "number" },
+        "date": { "type": "string", "maxLength": 64 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "sourceFileName": { "type": "string", "maxLength": 255 },
+        "batchId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "year": { "type": "string", "maxLength": 32 }
+      },
+      "required": ["productId", "productName", "type", "quantity", "stockBefore", "stockAfter", "date"]
+    },
+    "UploadBatch": {
+      "title": "UploadBatch",
+      "description": "Riwayat batch upload file Excel permintaan barang atau data penjualan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fileName": { "type": "string", "maxLength": 255 },
+        "uploadDate": { "type": "string", "maxLength": 64 },
+        "type": { "type": "string", "enum": ["barang_masuk", "data_penjualan"] },
+        "totalItems": { "type": "number" },
+        "totalQuantity": { "type": "number" },
+        "status": { "type": "string", "enum": ["berhasil", "sebagian", "gagal"] },
+        "affectedProductsCount": { "type": "number" },
+        "lowStockTriggeredCount": { "type": "number" }
+      },
+      "required": ["fileName", "uploadDate", "type", "totalItems", "totalQuantity", "status"]
+    },
+    "LowStockNotification": {
+      "title": "LowStockNotification",
+      "description": "Peringatan stok minimum dan stok habis untuk barang gudang",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "maxLength": 255 },
+        "currentStock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "deficit": { "type": "number" },
+        "triggeredAt": { "type": "string", "maxLength": 64 },
+        "read": { "type": "boolean" }
+      },
+      "required": ["productId", "productName", "currentStock", "minStock", "read"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Koleksi data produk gudang"
+    },
+    "/movements/{movementId}": {
+      "schema": { "$ref": "#/entities/StockMovement" },
+      "description": "Koleksi mutasi stok barang"
+    },
+    "/batches/{batchId}": {
+      "schema": { "$ref": "#/entities/UploadBatch" },
+      "description": "Koleksi riwayat batch upload file"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/LowStockNotification" },
+      "description": "Koleksi notifikasi stok minimum"
+    }
+  }
+}
