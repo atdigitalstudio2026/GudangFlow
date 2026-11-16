@@ -49,12 +49,14 @@
         "id": { "type": "string", "maxLength": 128 },
         "fileName": { "type": "string", "maxLength": 255 },
         "uploadDate": { "type": "string", "maxLength": 64 },
+        "uploadedAt": { "type": "string", "maxLength": 64 },
         "type": { "type": "string", "enum": ["barang_masuk", "data_penjualan"] },
         "totalItems": { "type": "number" },
         "totalQuantity": { "type": "number" },
         "status": { "type": "string", "enum": ["berhasil", "sebagian", "gagal"] },
         "affectedProductsCount": { "type": "number" },
-        "lowStockTriggeredCount": { "type": "number" }
+        "lowStockTriggeredCount": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 }
       },
       "required": ["fileName", "uploadDate", "type", "totalItems", "totalQuantity", "status"]
     },

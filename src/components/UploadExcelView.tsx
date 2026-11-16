@@ -22,6 +22,7 @@ import {
   ParseResult,
   downloadTemplateBarangMasuk,
   downloadTemplateDataPenjualan,
+  exportInventoryForImport,
 } from '../utils/excelParser';
 import { applyIncomingGoodsBatch, applySalesDataBatch } from '../utils/storage';
 
@@ -463,20 +464,23 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
               </div>
 
               {/* Format Requirements Info */}
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1.5">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-2">
                 <div className="font-semibold text-slate-800 flex items-center gap-1.5">
                   <Info className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Dukungan Format File Fleksibel:</span>
+                  <span>Format Ekspor & Impor (Masuk / Penjualan):</span>
                 </div>
+                <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 font-medium">
+                  Kedua Template Excel (Masuk & Penjualan) dapat digunakan secara fleksibel untuk <strong>Upload Barang Masuk</strong> maupun <strong>Upload Data Penjualan</strong>.
+                </p>
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600 pl-1">
                   <li>
-                    <strong>Format Rekap SO Per Hari:</strong> Kolom <span className="font-mono text-slate-800">No SO</span>, <span className="font-mono text-slate-800">Nama Barang</span>, <span className="font-mono text-slate-800">Qty</span>. Baris pemisah <span className="font-mono text-slate-800">Tanggal: DD-MM-YYYY</span> dan baris <span className="font-mono text-slate-800">Subtotal/Grand Total</span> diproses otomatis tanpa duplikasi.
+                    <strong>Kolom Template Penjualan &amp; Masuk:</strong> <span className="font-mono text-slate-800">Nama Produk</span> dan <span className="font-mono text-slate-800">Jumlah</span> (satuan <strong>Pcs</strong>). Juga otomatis mengenali <span className="font-mono text-slate-800">Nama Barang</span> &amp; <span className="font-mono text-slate-800">Qty</span>.
                   </li>
                   <li>
-                    <strong>Format Tabel Standar:</strong> Kolom <span className="font-mono text-slate-800">Nama Produk</span> dan <span className="font-mono text-slate-800">Jumlah</span>.
+                    <strong>Kolom Opsional:</strong> <span className="font-mono text-slate-800">No SO / PO</span>, <span className="font-mono text-slate-800">Tanggal / Tahun</span>, <span className="font-mono text-slate-800">Kategori</span>, <span className="font-mono text-slate-800">Stok Minimum</span>.
                   </li>
                   <li>
-                    Satuan barang gudang dihitung dalam <strong className="text-slate-800">Pcs</strong>.
+                    <strong>Format Rekap SO Per Hari:</strong> Baris pemisah <span className="font-mono text-slate-800">Tanggal: DD-MM-YYYY</span> &amp; baris <span className="font-mono text-slate-800">Subtotal/Grand Total</span> diproses otomatis tanpa duplikasi.
                   </li>
                 </ul>
               </div>
@@ -504,8 +508,23 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
                   className="w-full py-2 px-3 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition-colors flex items-center justify-center gap-2"
                 >
                   <Download className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Unduh Format Template Excel (.xlsx)</span>
+                  <span>
+                    {mode === 'barang_masuk'
+                      ? 'Unduh Template Barang Masuk (.xlsx)'
+                      : 'Unduh Template Penjualan (Nama Produk & Jumlah)'}
+                  </span>
                 </button>
+
+                {products.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => exportInventoryForImport(products)}
+                    className="w-full py-2 px-3 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Ekspor Daftar Produk Siap Impor (.xlsx)</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -632,8 +651,8 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
                       className="px-2 py-1 text-xs border border-slate-200 rounded-md bg-white font-medium text-slate-700"
                       title="Kolom Nama Produk / Barang"
                     >
-                      {parseResult.headers.map((h) => (
-                        <option key={h} value={h}>
+                      {parseResult.headers.map((h, hIdx) => (
+                        <option key={`prod-col-${h}-${hIdx}`} value={h}>
                           Produk: {h}
                         </option>
                       ))}
@@ -645,8 +664,8 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
                       className="px-2 py-1 text-xs border border-slate-200 rounded-md bg-white font-medium text-slate-700"
                       title="Kolom Qty / Jumlah"
                     >
-                      {parseResult.headers.map((h) => (
-                        <option key={h} value={h}>
+                      {parseResult.headers.map((h, hIdx) => (
+                        <option key={`qty-col-${h}-${hIdx}`} value={h}>
                           Qty: {h}
                         </option>
                       ))}
@@ -659,8 +678,8 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
                         className="px-2 py-1 text-xs border border-slate-200 rounded-md bg-white font-medium text-slate-700"
                         title="Kolom No Dokumen / SO"
                       >
-                        {parseResult.headers.map((h) => (
-                          <option key={h} value={h}>
+                        {parseResult.headers.map((h, hIdx) => (
+                          <option key={`doc-col-${h}-${hIdx}`} value={h}>
                             Dok: {h}
                           </option>
                         ))}

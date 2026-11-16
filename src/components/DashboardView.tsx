@@ -14,17 +14,21 @@ import {
   ShieldCheck,
   CheckCircle2,
   Calendar,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { Product, StockMovement, UploadBatch } from '../types/inventory';
 import { downloadTemplateBarangMasuk, downloadTemplateDataPenjualan } from '../utils/excelParser';
+import { deleteUploadBatch } from '../utils/storage';
 
 interface DashboardViewProps {
   products: Product[];
   movements: StockMovement[];
   batches: UploadBatch[];
-  onNavigate: (tab: 'inventaris' | 'upload_masuk' | 'upload_penjualan' | 'mutasi') => void;
+  onNavigate: (tab: 'inventaris' | 'upload_masuk' | 'upload_penjualan' | 'riwayat_upload' | 'mutasi') => void;
   onFilterLowStock: () => void;
   onOpenAddProduct: () => void;
+  onDataUpdated: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -34,7 +38,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate,
   onFilterLowStock,
   onOpenAddProduct,
+  onDataUpdated,
 }) => {
+  const [confirmDeleteBatch, setConfirmDeleteBatch] = React.useState<UploadBatch | null>(null);
+
+  const handleConfirmDeleteBatch = () => {
+    if (!confirmDeleteBatch) return;
+    const res = deleteUploadBatch(confirmDeleteBatch.id);
+    if (res.success) {
+      onDataUpdated();
+    }
+    setConfirmDeleteBatch(null);
+  };
   const totalUnits = products.reduce((acc, p) => acc + p.currentStock, 0);
   const totalInflow = products.reduce((acc, p) => acc + p.totalIncoming, 0);
   const totalOutflow = products.reduce((acc, p) => acc + p.totalOutgoing, 0);
@@ -242,12 +257,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           ) : (
             <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {[...depletedProducts, ...lowStockProducts].map((p) => {
+              {[...depletedProducts, ...lowStockProducts].map((p, pIdx) => {
                 const isZero = p.currentStock <= 0;
                 const deficit = p.minStock - p.currentStock;
 
                 return (
-                  <div key={p.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                  <div key={`${p.id}-${pIdx}`} className="py-2.5 flex items-center justify-between gap-3 text-xs">
                     <div>
                       <div className="font-semibold text-slate-900 flex items-center gap-1.5">
                         <span>{p.name}</span>
@@ -310,7 +325,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               const percentage = Math.round((p.totalOutgoing / maxOutgoing) * 100);
 
               return (
-                <div key={p.id} className="space-y-1 text-xs">
+                <div key={`${p.id}-${idx}`} className="space-y-1 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-slate-900 truncate max-w-[200px]">
                       {idx + 1}. {p.name}
@@ -347,10 +362,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h3>
           </div>
           <button
-            onClick={() => onNavigate('mutasi')}
+            onClick={() => onNavigate('riwayat_upload')}
             className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
           >
-            Buku Mutasi Lengkap →
+            Kelola Semua Log Upload →
           </button>
         </div>
 
@@ -364,14 +379,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <th className="py-2.5 px-3 text-right">Total Item Produk</th>
                 <th className="py-2.5 px-3 text-right">Total Kuantitas</th>
                 <th className="py-2.5 px-3">Status Sinkronisasi</th>
+                <th className="py-2.5 px-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {batches.map((batch) => {
+              {batches.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                    Belum ada riwayat unggahan file Excel.
+                  </td>
+                </tr>
+              ) : (
+                batches.map((batch, bIdx) => {
                 const isIncoming = batch.type === 'barang_masuk';
 
                 return (
-                  <tr key={batch.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={`${batch.id}-${bIdx}`} className="hover:bg-slate-50/70 transition-colors">
                     <td className="py-2.5 px-3 font-mono font-medium text-slate-900">
                       {batch.uploadDate}
                     </td>
@@ -409,13 +432,66 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <span>Inventaris Diperbarui</span>
                       </span>
                     </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <button
+                        onClick={() => setConfirmDeleteBatch(batch)}
+                        className="px-2 py-1 text-[11px] font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md transition-colors inline-flex items-center gap-1"
+                        title="Hapus upload ini jika salah & kembalikan stok"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Hapus</span>
+                      </button>
+                    </td>
                   </tr>
                 );
-              })}
+              })
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {confirmDeleteBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
+            onClick={() => setConfirmDeleteBatch(null)}
+          />
+          <div className="relative z-10 w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-2xl p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Hapus Berkas Upload & Kembalikan Stok?
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Hanya unggahan <strong>{confirmDeleteBatch.fileName}</strong> ({confirmDeleteBatch.uploadDate}) yang akan dihapus. Stok terkait akan dikembalikan otomatis.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteBatch(null)}
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteBatch}
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Ya, Hapus & Rollback</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

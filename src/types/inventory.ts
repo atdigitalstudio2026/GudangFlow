@@ -38,12 +38,14 @@ export interface UploadBatch {
   id: string;
   fileName: string;
   uploadDate: string; // Tanggal upload sistem
+  uploadedAt?: string; // Real ISO timestamp saat file diunggah
   type: 'barang_masuk' | 'data_penjualan';
   totalItems: number;
   totalQuantity: number;
   status: 'berhasil' | 'sebagian' | 'gagal';
   affectedProductsCount: number;
   lowStockTriggeredCount: number;
+  notes?: string;
   items: {
     productName: string;
     quantity: number;

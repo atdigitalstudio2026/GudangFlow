@@ -9,24 +9,45 @@ import {
   Calendar,
   FileSpreadsheet,
   CheckCircle2,
+  Trash2,
+  AlertTriangle,
+  X,
+  RotateCcw,
 } from 'lucide-react';
 import { StockMovement } from '../types/inventory';
 import { exportMovementsToExcel } from '../utils/excelParser';
+import { deleteSingleMovement } from '../utils/storage';
 
 interface MutationHistoryViewProps {
   movements: StockMovement[];
+  onDataUpdated: () => void;
   onGoToUploadMasuk: () => void;
   onGoToUploadPenjualan: () => void;
 }
 
 export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
   movements,
+  onDataUpdated,
   onGoToUploadMasuk,
   onGoToUploadPenjualan,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'masuk' | 'keluar' | 'penyesuaian'>('all');
   const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [confirmDeleteMovement, setConfirmDeleteMovement] = useState<StockMovement | null>(null);
+  const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
+
+  const handleConfirmDeleteMovement = () => {
+    if (!confirmDeleteMovement) return;
+    const res = deleteSingleMovement(confirmDeleteMovement.id);
+    if (res.success && res.deletedMovement) {
+      setRollbackNotice(
+        `Catatan mutasi "${res.deletedMovement.productName}" (${res.deletedMovement.type === 'masuk' ? '+' : '-'}${res.deletedMovement.quantity} Pcs) telah dihapus dan stok produk disesuaikan kembali.`
+      );
+      onDataUpdated();
+    }
+    setConfirmDeleteMovement(null);
+  };
 
   // Available years from movements
   const availableYears = useMemo(() => {
@@ -96,6 +117,22 @@ export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
           </button>
         </div>
       </div>
+
+      {rollbackNotice && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-xs text-emerald-900">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{rollbackNotice}</span>
+          </div>
+          <button
+            onClick={() => setRollbackNotice(null)}
+            className="p-1 text-emerald-700 hover:bg-emerald-100 rounded-md transition-colors"
+            aria-label="Tutup pemberitahuan"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -168,8 +205,8 @@ export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
                 className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 font-medium font-mono"
               >
                 <option value="all">Semua Tahun</option>
-                {availableYears.map((yr) => (
-                  <option key={yr} value={yr}>
+                {availableYears.map((yr, yIdx) => (
+                  <option key={`${yr}-${yIdx}`} value={yr}>
                     Tahun {yr}
                   </option>
                 ))}
@@ -241,12 +278,13 @@ export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
                 <th className="py-3 px-4 text-right">Stok Sesudah</th>
                 <th className="py-3 px-4">Sumber Dokumen / File</th>
                 <th className="py-3 px-4">Catatan / Tahun</th>
+                <th className="py-3 px-4 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredMovements.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
                     <History className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <div>Tidak ada riwayat mutasi yang cocok.</div>
                   </td>
@@ -257,7 +295,7 @@ export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
                   const isOutgoing = m.type === 'keluar';
 
                   return (
-                    <tr key={m.id} className="hover:bg-slate-50/70 transition-colors">
+                    <tr key={`${m.id}-${idx}`} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3 px-4 font-mono text-slate-400">{idx + 1}</td>
                       <td className="py-3 px-4">
                         <div className="font-mono font-medium text-slate-900">{m.date}</div>
@@ -315,6 +353,16 @@ export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
                           <span className="font-mono text-[10px] text-slate-400">Periode: {m.year}</span>
                         )}
                       </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => setConfirmDeleteMovement(m)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                          title="Hapus baris mutasi ini & kembalikan stok terkait"
+                          aria-label={`Hapus mutasi ${m.productName}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
@@ -323,6 +371,74 @@ export const MutationHistoryView: React.FC<MutationHistoryViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Confirmation Modal for Deleting Individual Movement */}
+      {confirmDeleteMovement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
+            onClick={() => setConfirmDeleteMovement(null)}
+          />
+          <div className="relative z-10 w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-2xl p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Hapus Catatan Mutasi Ini?
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Hanya baris transaksi ini yang akan dihapus dan stok produk terkait akan disesuaikan kembali.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1.5">
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-500">Produk:</span>
+                <span className="font-semibold text-slate-900 text-right">
+                  {confirmDeleteMovement.productName}
+                </span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-500">Tanggal & Sumber:</span>
+                <span className="font-mono text-slate-700 text-right truncate max-w-[220px]">
+                  {confirmDeleteMovement.date} · {confirmDeleteMovement.sourceFileName || 'Manual'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-500">Dampak Rollback:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  {confirmDeleteMovement.type === 'masuk'
+                    ? `-${confirmDeleteMovement.quantity} Pcs`
+                    : confirmDeleteMovement.type === 'keluar'
+                    ? `+${confirmDeleteMovement.quantity} Pcs`
+                    : `${confirmDeleteMovement.stockBefore - confirmDeleteMovement.stockAfter > 0 ? '+' : ''}${confirmDeleteMovement.stockBefore - confirmDeleteMovement.stockAfter} Pcs`}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteMovement(null)}
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteMovement}
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Hapus & Sesuaikan Stok</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

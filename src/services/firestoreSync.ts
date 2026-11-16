@@ -4,12 +4,10 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
-  query,
-  orderBy,
   writeBatch,
   getDocs,
 } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { db, handleFirestoreError, OperationType } from './firebase';
 import { Product, StockMovement, UploadBatch, LowStockNotification } from '../types/inventory';
 
 // Collections
@@ -19,6 +17,60 @@ export const COLLECTIONS = {
   BATCHES: 'batches',
   NOTIFICATIONS: 'notifications',
 };
+
+const FIRESTORE_BATCH_LIMIT = 450;
+
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const cleaned: Record<string, any> = {};
+    Object.entries(value as Record<string, any>).forEach(([k, v]) => {
+      if (v !== undefined) {
+        cleaned[k] = stripUndefined(v);
+      }
+    });
+    return cleaned as T;
+  }
+  return value;
+}
+
+// Helper to execute Firestore writeBatch operations safely in chunks (< 500 ops per batch)
+async function commitSetInChunks<T extends { id: string }>(
+  collectionName: string,
+  items: T[],
+  merge = false
+): Promise<void> {
+  if (items.length === 0) return;
+  for (let i = 0; i < items.length; i += FIRESTORE_BATCH_LIMIT) {
+    const chunk = items.slice(i, i + FIRESTORE_BATCH_LIMIT);
+    const batch = writeBatch(db);
+    chunk.forEach((item) => {
+      const ref = doc(db, collectionName, item.id);
+      const payload = stripUndefined(item);
+      if (merge) {
+        batch.set(ref, payload, { merge: true });
+      } else {
+        batch.set(ref, payload);
+      }
+    });
+    await batch.commit();
+  }
+}
+
+async function commitDeleteInChunks(collectionName: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += FIRESTORE_BATCH_LIMIT) {
+    const chunk = ids.slice(i, i + FIRESTORE_BATCH_LIMIT);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => {
+      const ref = doc(db, collectionName, id);
+      batch.delete(ref);
+    });
+    await batch.commit();
+  }
+}
 
 // --- Products ---
 export function subscribeProducts(
@@ -33,7 +85,6 @@ export function subscribeProducts(
       snapshot.forEach((d) => {
         items.push(d.data() as Product);
       });
-      // Sort by name
       items.sort((a, b) => a.name.localeCompare(b.name));
       onUpdate(items);
     },
@@ -47,7 +98,7 @@ export function subscribeProducts(
 export async function syncProductToFirestore(product: Product): Promise<void> {
   const docRef = doc(db, COLLECTIONS.PRODUCTS, product.id);
   try {
-    await setDoc(docRef, product, { merge: true });
+    await setDoc(docRef, stripUndefined(product), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.PRODUCTS}/${product.id}`);
   }
@@ -56,12 +107,7 @@ export async function syncProductToFirestore(product: Product): Promise<void> {
 export async function syncProductsBatchToFirestore(products: Product[]): Promise<void> {
   if (products.length === 0) return;
   try {
-    const batch = writeBatch(db);
-    products.forEach((p) => {
-      const ref = doc(db, COLLECTIONS.PRODUCTS, p.id);
-      batch.set(ref, p, { merge: true });
-    });
-    await batch.commit();
+    await commitSetInChunks(COLLECTIONS.PRODUCTS, products, true);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.PRODUCTS);
   }
@@ -73,6 +119,15 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
     await deleteDoc(docRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${COLLECTIONS.PRODUCTS}/${productId}`);
+  }
+}
+
+export async function deleteProductsByIdsFromFirestore(productIds: string[]): Promise<void> {
+  if (productIds.length === 0) return;
+  try {
+    await commitDeleteInChunks(COLLECTIONS.PRODUCTS, productIds);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, COLLECTIONS.PRODUCTS);
   }
 }
 
@@ -89,7 +144,6 @@ export function subscribeMovements(
       snapshot.forEach((d) => {
         items.push(d.data() as StockMovement);
       });
-      // Sort chronologically descending
       items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       onUpdate(items);
     },
@@ -103,7 +157,7 @@ export function subscribeMovements(
 export async function syncMovementToFirestore(movement: StockMovement): Promise<void> {
   const docRef = doc(db, COLLECTIONS.MOVEMENTS, movement.id);
   try {
-    await setDoc(docRef, movement);
+    await setDoc(docRef, stripUndefined(movement));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.MOVEMENTS}/${movement.id}`);
   }
@@ -112,14 +166,18 @@ export async function syncMovementToFirestore(movement: StockMovement): Promise<
 export async function syncMovementsBatchToFirestore(movements: StockMovement[]): Promise<void> {
   if (movements.length === 0) return;
   try {
-    const batch = writeBatch(db);
-    movements.forEach((m) => {
-      const ref = doc(db, COLLECTIONS.MOVEMENTS, m.id);
-      batch.set(ref, m);
-    });
-    await batch.commit();
+    await commitSetInChunks(COLLECTIONS.MOVEMENTS, movements, false);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.MOVEMENTS);
+  }
+}
+
+export async function deleteMovementsByIdsFromFirestore(movementIds: string[]): Promise<void> {
+  if (movementIds.length === 0) return;
+  try {
+    await commitDeleteInChunks(COLLECTIONS.MOVEMENTS, movementIds);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, COLLECTIONS.MOVEMENTS);
   }
 }
 
@@ -136,7 +194,11 @@ export function subscribeBatches(
       snapshot.forEach((d) => {
         items.push(d.data() as UploadBatch);
       });
-      items.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+      items.sort(
+        (a, b) =>
+          new Date(b.uploadedAt || b.uploadDate).getTime() -
+          new Date(a.uploadedAt || a.uploadDate).getTime()
+      );
       onUpdate(items);
     },
     (error) => {
@@ -149,9 +211,18 @@ export function subscribeBatches(
 export async function syncBatchToFirestore(batchItem: UploadBatch): Promise<void> {
   const docRef = doc(db, COLLECTIONS.BATCHES, batchItem.id);
   try {
-    await setDoc(docRef, batchItem);
+    await setDoc(docRef, stripUndefined(batchItem));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.BATCHES}/${batchItem.id}`);
+  }
+}
+
+export async function deleteBatchFromFirestore(batchId: string): Promise<void> {
+  const docRef = doc(db, COLLECTIONS.BATCHES, batchId);
+  try {
+    await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${COLLECTIONS.BATCHES}/${batchId}`);
   }
 }
 
@@ -181,9 +252,20 @@ export function subscribeNotifications(
 export async function syncNotificationToFirestore(notif: LowStockNotification): Promise<void> {
   const docRef = doc(db, COLLECTIONS.NOTIFICATIONS, notif.id);
   try {
-    await setDoc(docRef, notif, { merge: true });
+    await setDoc(docRef, stripUndefined(notif), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.NOTIFICATIONS}/${notif.id}`);
+  }
+}
+
+export async function syncNotificationsBatchToFirestore(
+  notifications: LowStockNotification[]
+): Promise<void> {
+  if (notifications.length === 0) return;
+  try {
+    await commitSetInChunks(COLLECTIONS.NOTIFICATIONS, notifications, true);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.NOTIFICATIONS);
   }
 }
 
@@ -193,6 +275,15 @@ export async function deleteNotificationFromFirestore(notifId: string): Promise<
     await deleteDoc(docRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${COLLECTIONS.NOTIFICATIONS}/${notifId}`);
+  }
+}
+
+export async function deleteNotificationsByIdsFromFirestore(notifIds: string[]): Promise<void> {
+  if (notifIds.length === 0) return;
+  try {
+    await commitDeleteInChunks(COLLECTIONS.NOTIFICATIONS, notifIds);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, COLLECTIONS.NOTIFICATIONS);
   }
 }
 
@@ -208,11 +299,9 @@ export async function clearAllFirestoreData(): Promise<void> {
   for (const colName of collectionsToClear) {
     try {
       const snap = await getDocs(collection(db, colName));
-      const batch = writeBatch(db);
-      snap.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      await batch.commit();
+      const ids: string[] = [];
+      snap.forEach((docSnap) => ids.push(docSnap.id));
+      await commitDeleteInChunks(colName, ids);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, colName);
     }

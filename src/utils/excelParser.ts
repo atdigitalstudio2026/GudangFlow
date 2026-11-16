@@ -6,6 +6,7 @@ export interface ParsedExcelRow {
   productName: string;
   quantity: number;
   sku?: string;
+  unit?: string;
   category?: string;
   dateOrYear?: string; // Formatted date e.g. "08-01-2021" or "2021-01-08"
   year?: string | number; // e.g. 2021
@@ -24,6 +25,8 @@ export interface ParseResult {
     dateOrYearCol: string | null;
     categoryCol: string | null;
     minStockCol: string | null;
+    skuCol: string | null;
+    unitCol: string | null;
   };
   rows: ParsedExcelRow[];
   totalValid: number;
@@ -136,7 +139,7 @@ export function isSummaryOrTotalRow(row: any[]): boolean {
   });
 }
 
-// Intelligent matching of headers
+// Intelligent matching of headers with priority ordering
 export function detectColumns(headers: string[]) {
   let productNameCol: string | null = null;
   let quantityCol: string | null = null;
@@ -144,9 +147,18 @@ export function detectColumns(headers: string[]) {
   let dateOrYearCol: string | null = null;
   let categoryCol: string | null = null;
   let minStockCol: string | null = null;
+  let skuCol: string | null = null;
+  let unitCol: string | null = null;
 
   for (const h of headers) {
     const clean = cleanHeader(h);
+    if (!clean) continue;
+
+    // SKU match
+    if (!skuCol && (clean === 'sku' || clean.includes('sku') || clean.includes('kode barang') || clean.includes('kode produk'))) {
+      skuCol = h;
+      continue;
+    }
 
     // Document / Reference match (No SO, No PO, No Dokumen, Surat Jalan, dsb.)
     if (!documentNoCol) {
@@ -188,22 +200,18 @@ export function detectColumns(headers: string[]) {
       }
     }
 
-    // Quantity match
-    if (!quantityCol) {
-      if (
-        clean.includes('jumlah') ||
-        clean.includes('qty') ||
-        clean.includes('kuantitas') ||
-        clean.includes('quantity') ||
-        clean.includes('volume') ||
-        clean.includes('terjual') ||
-        clean.includes('masuk') ||
-        clean.includes('keluar') ||
-        clean.includes('stok')
-      ) {
-        quantityCol = h;
+    // Min Stock match (check before quantity so "stok minimum" doesn't get captured as quantity)
+    if (!minStockCol) {
+      if (clean.includes('minimum') || clean.includes('min stock') || clean.includes('stok min') || clean.includes('ambang batas')) {
+        minStockCol = h;
         continue;
       }
+    }
+
+    // Unit match
+    if (!unitCol && (clean === 'satuan' || clean === 'unit' || clean === 'uom')) {
+      unitCol = h;
+      continue;
     }
 
     // Date or Year match
@@ -229,12 +237,27 @@ export function detectColumns(headers: string[]) {
         continue;
       }
     }
+  }
 
-    // Min Stock match
-    if (!minStockCol) {
-      if (clean.includes('minimum') || clean.includes('min stock') || clean.includes('stok min')) {
-        minStockCol = h;
-        continue;
+  // Two-pass quantity matching: explicit qty/jumlah/terjual first, then fallback to stok/masuk/keluar
+  const primaryQtyPatterns = ['jumlah', 'qty', 'kuantitas', 'quantity', 'terjual', 'volume', 'stok gudang saat ini'];
+  for (const h of headers) {
+    const clean = cleanHeader(h);
+    if (!clean || h === minStockCol) continue;
+    if (primaryQtyPatterns.some((pat) => clean.includes(pat))) {
+      quantityCol = h;
+      break;
+    }
+  }
+
+  if (!quantityCol) {
+    const secondaryQtyPatterns = ['masuk', 'keluar', 'stok'];
+    for (const h of headers) {
+      const clean = cleanHeader(h);
+      if (!clean || h === minStockCol) continue;
+      if (secondaryQtyPatterns.some((pat) => clean.includes(pat))) {
+        quantityCol = h;
+        break;
       }
     }
   }
@@ -244,7 +267,6 @@ export function detectColumns(headers: string[]) {
     productNameCol = headers[0];
   }
   if (!quantityCol && headers.length >= 2) {
-    // If col 0 is product, col 1 is quantity
     if (productNameCol === headers[0]) {
       quantityCol = headers[1];
     } else {
@@ -252,7 +274,7 @@ export function detectColumns(headers: string[]) {
     }
   }
 
-  return { productNameCol, quantityCol, documentNoCol, dateOrYearCol, categoryCol, minStockCol };
+  return { productNameCol, quantityCol, documentNoCol, dateOrYearCol, categoryCol, minStockCol, skuCol, unitCol };
 }
 
 // Parse Excel or CSV File with support for hierarchical/sectioned reports (like Rekap SO Per Hari)
@@ -289,7 +311,21 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
     throw new Error('Tidak dapat menemukan baris header pada file. Pastikan terdapat kolom Nama Produk dan Jumlah.');
   }
 
-  const rawHeaders = (jsonData[headerIndex] as any[]).map((h) => String(h || '').trim());
+  // Build unique non-empty column headers while tracking original column indices
+  const rawHeaderRow = jsonData[headerIndex] as any[];
+  const headerEntries: { name: string; colIndex: number }[] = [];
+  const seenHeaderCounts = new Map<string, number>();
+
+  rawHeaderRow.forEach((cell, idx) => {
+    const base = String(cell || '').trim();
+    if (!base) return; // Skip completely empty trailing/blank header cells to avoid duplicate "" keys
+    const count = seenHeaderCounts.get(base) || 0;
+    seenHeaderCounts.set(base, count + 1);
+    const uniqueName = count === 0 ? base : `${base} (${count + 1})`;
+    headerEntries.push({ name: uniqueName, colIndex: idx });
+  });
+
+  const rawHeaders = headerEntries.map((e) => e.name);
   const detected = detectColumns(rawHeaders);
 
   const dataRows = jsonData.slice(headerIndex + 1);
@@ -328,10 +364,10 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       continue; // Skip summary rows to prevent duplicate quantity counting
     }
 
-    // Build row object matching header
+    // Build row object matching unique header entries by original column index
     const rowObj: Record<string, any> = {};
-    rawHeaders.forEach((colName, idx) => {
-      rowObj[colName] = rawRow[idx] !== undefined ? rawRow[idx] : '';
+    headerEntries.forEach((entry) => {
+      rowObj[entry.name] = rawRow[entry.colIndex] !== undefined ? rawRow[entry.colIndex] : '';
     });
 
     const rawName = detected.productNameCol ? String(rowObj[detected.productNameCol] || '').trim() : '';
@@ -340,6 +376,8 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
     const rawColDate = detected.dateOrYearCol ? String(rowObj[detected.dateOrYearCol] || '').trim() : undefined;
     const rawCategory = detected.categoryCol ? String(rowObj[detected.categoryCol] || '').trim() : undefined;
     const rawMinStock = detected.minStockCol ? Number(rowObj[detected.minStockCol]) : undefined;
+    const rawSku = detected.skuCol ? String(rowObj[detected.skuCol] || '').trim() : undefined;
+    const rawUnit = detected.unitCol ? String(rowObj[detected.unitCol] || '').trim() : undefined;
 
     // If both name and quantity are empty, skip row silently
     if (!rawName && (rawQty === '' || rawQty === null || rawQty === undefined)) {
@@ -371,7 +409,8 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       raw: rowObj,
       productName: rawName,
       quantity: isNaN(parsedQty) ? 0 : Math.round(parsedQty),
-      sku: undefined,
+      sku: rawSku || undefined,
+      unit: rawUnit || 'Pcs',
       documentNo: rawDocNo || undefined,
       dateOrYear: effectiveDate,
       year: effectiveYear,
@@ -396,7 +435,65 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
   };
 }
 
-// Download Excel Template for Incoming Goods (Unit Pcs)
+// Helper: Build guide worksheet for Excel templates
+function createGuideWorksheet() {
+  const guideData = [
+    {
+      'Nama Kolom': 'Nama Produk / Nama Barang',
+      'Status': 'WAJIB',
+      'Fungsi di Upload Masuk': 'Mencocokkan produk atau mendaftarkan produk baru otomatis',
+      'Fungsi di Upload Penjualan': 'Mencocokkan produk di gudang untuk memotong stok real-time',
+      'Contoh Isi': 'Date Crown Black Sayer 500 Gr',
+    },
+    {
+      'Nama Kolom': 'Jumlah / Qty',
+      'Status': 'WAJIB',
+      'Fungsi di Upload Masuk': 'Menambah stok gudang sesuai angka (satuan Pcs)',
+      'Fungsi di Upload Penjualan': 'Mengurangi/memotong stok gudang sesuai angka (satuan Pcs)',
+      'Contoh Isi': '100',
+    },
+    {
+      'Nama Kolom': 'No Dokumen / No SO / PO',
+      'Status': 'Opsional',
+      'Fungsi di Upload Masuk': 'Dicatat sebagai referensi PO di Buku Mutasi',
+      'Fungsi di Upload Penjualan': 'Dicatat sebagai referensi No SO / SJ di Buku Mutasi',
+      'Contoh Isi': 'SO : 03078 atau PO20261101',
+    },
+    {
+      'Nama Kolom': 'Tanggal / Tahun',
+      'Status': 'Opsional',
+      'Fungsi di Upload Masuk': 'Tanggal fisik transaksi (bisa kolom atau baris "Tanggal: DD-MM-YYYY")',
+      'Fungsi di Upload Penjualan': 'Tanggal/tahun penjualan (bisa kolom atau baris "Tanggal: DD-MM-YYYY")',
+      'Contoh Isi': '2026-11-12 atau Tanggal: 08-01-2021',
+    },
+    {
+      'Nama Kolom': 'Kategori',
+      'Status': 'Opsional',
+      'Fungsi di Upload Masuk': 'Mengisi/memperbarui kategori produk',
+      'Fungsi di Upload Penjualan': 'Kategori fallback jika produk belum terdaftar',
+      'Contoh Isi': 'Kurma / Sembako',
+    },
+    {
+      'Nama Kolom': 'Stok Minimum',
+      'Status': 'Opsional',
+      'Fungsi di Upload Masuk': 'Mengatur batas peringatan stok menipis (default: 10 Pcs)',
+      'Fungsi di Upload Penjualan': 'Batas minimum fallback jika produk belum terdaftar',
+      'Contoh Isi': '15',
+    },
+    {
+      'Nama Kolom': 'Satuan',
+      'Status': 'Opsional',
+      'Fungsi di Upload Masuk': 'Standar sistem adalah Pcs',
+      'Fungsi di Upload Penjualan': 'Standar sistem adalah Pcs',
+      'Contoh Isi': 'Pcs',
+    },
+  ];
+  const wsGuide = XLSX.utils.json_to_sheet(guideData);
+  wsGuide['!cols'] = [{ wch: 24 }, { wch: 10 }, { wch: 44 }, { wch: 44 }, { wch: 30 }];
+  return wsGuide;
+}
+
+// Download Excel Template for Incoming Goods (Also compatible with Sales Upload)
 export function downloadTemplateBarangMasuk() {
   const sampleData = [
     {
@@ -446,49 +543,68 @@ export function downloadTemplateBarangMasuk() {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Permintaan_Barang_Masuk');
+  XLSX.utils.book_append_sheet(wb, createGuideWorksheet(), 'Panduan_Format');
   XLSX.writeFile(wb, 'Template_Permintaan_Barang_Masuk.xlsx');
 }
 
-// Download Excel Template for Sales / Outgoing Goods
+// Download Excel Template for Sales / Outgoing Goods (Standard: Nama Produk & Jumlah; also compatible with Incoming Upload)
 export function downloadTemplateDataPenjualan() {
   const currentYear = new Date().getFullYear();
   const sampleData = [
     {
-      'No SO': 'SO : 03078',
-      'Nama Barang': 'Date Crown Black Sayer 500 Gr',
-      'Qty': 5,
+      'Nama Produk': 'Date Crown Black Sayer 500 Gr',
+      'Jumlah': 5,
     },
     {
-      'No SO': 'SO : 03078',
-      'Nama Barang': 'Date Crown Khenaizi 1 Kg',
-      'Qty': 25,
+      'Nama Produk': 'Date Crown Khenaizi 1 Kg',
+      'Jumlah': 25,
     },
     {
-      'No SO': 'SO : 03078',
-      'Nama Barang': 'Date Crown Khenaizi 250 Gr',
-      'Qty': 38,
+      'Nama Produk': 'Date Crown Khenaizi 250 Gr',
+      'Jumlah': 38,
     },
     {
-      'No SO': 'PO21090050',
-      'Nama Barang': 'Sukkary Rotab Dates -Royal Palm- 3Kg (Pcs)',
-      'Qty': 4,
+      'Nama Produk': 'Sukkary Rotab Dates -Royal Palm- 3Kg (Pcs)',
+      'Jumlah': 4,
     },
     {
-      'No SO': 'SO : 0365 , SJ : 01829',
-      'Nama Barang': 'Sunfruit Tangkai 500Gr Blue (Pcs)',
-      'Qty': 24,
+      'Nama Produk': 'Sunfruit Tangkai 500Gr Blue (Pcs)',
+      'Jumlah': 24,
     },
   ];
 
   const ws = XLSX.utils.json_to_sheet(sampleData);
-  ws['!cols'] = [{ wch: 25 }, { wch: 42 }, { wch: 12 }];
+  ws['!cols'] = [{ wch: 44 }, { wch: 14 }];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Data_Penjualan_Rekap_SO');
-  XLSX.writeFile(wb, `Template_Rekap_SO_Penjualan_${currentYear}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, 'Data_Penjualan');
+  XLSX.utils.book_append_sheet(wb, createGuideWorksheet(), 'Panduan_Format');
+  XLSX.writeFile(wb, `Template_Data_Penjualan_${currentYear}.xlsx`);
 }
 
-// Export Inventory to Excel (All units strictly in Pcs)
+// Export Current Inventory in Clean Import-Ready Format (Round-trip compatible for Barang Masuk / Penjualan)
+export function exportInventoryForImport(products: Product[]) {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const exportData = products.map((p) => ({
+    'No Dokumen / PO': `IMP-${todayStr}`,
+    'SKU / Kode': p.sku || '',
+    'Nama Produk': p.name,
+    'Jumlah': Math.max(0, p.currentStock),
+    'Kategori': p.category || 'Umum',
+    'Stok Minimum': p.minStock || 10,
+    'Satuan': p.unit || 'Pcs',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 18 }, { wch: 15 }, { wch: 10 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Format_Siap_Impor');
+  XLSX.utils.book_append_sheet(wb, createGuideWorksheet(), 'Panduan_Format');
+  XLSX.writeFile(wb, `Ekspor_Siap_Impor_Gudang_${todayStr}.xlsx`);
+}
+
+// Export Inventory to Excel (Full Audit Report - all units strictly in Pcs)
 export function exportInventoryToExcel(products: Product[]) {
   const exportData = products.map((p, index) => {
     let statusLabel = 'Aman';

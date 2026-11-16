@@ -19,7 +19,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Product } from '../types/inventory';
-import { exportInventoryToExcel, downloadTemplateBarangMasuk } from '../utils/excelParser';
+import { exportInventoryToExcel, exportInventoryForImport, downloadTemplateBarangMasuk } from '../utils/excelParser';
 
 interface InventoryViewProps {
   products: Product[];
@@ -154,12 +154,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           )}
 
           <button
+            onClick={() => exportInventoryForImport(products)}
+            disabled={products.length === 0}
+            className="px-3 py-2 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+            title="Ekspor daftar produk dalam format siap diimpor ulang (Masuk / Penjualan)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Ekspor Siap Impor (.xlsx)</span>
+          </button>
+
+          <button
             onClick={() => exportInventoryToExcel(products)}
             disabled={products.length === 0}
             className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
-            <span>Ekspor Excel (.xlsx)</span>
+            <span>Ekspor Laporan (.xlsx)</span>
           </button>
 
           <button
@@ -257,8 +267,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 font-medium"
             >
               <option value="all">Semua Kategori ({categories.length})</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
+              {categories.map((c, cIdx) => (
+                <option key={`${c}-${cIdx}`} value={c}>
                   {c}
                 </option>
               ))}
@@ -406,7 +416,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
                   return (
                     <tr
-                      key={p.id}
+                      key={`${p.id}-${idx}`}
                       className={`hover:bg-slate-50/70 transition-colors ${
                         isZero ? 'bg-rose-50/30' : isLow ? 'bg-amber-50/20' : ''
                       }`}
