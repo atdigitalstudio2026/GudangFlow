@@ -474,10 +474,10 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600 pl-1">
                   <li>
-                    <strong>Kolom Template Penjualan &amp; Masuk:</strong> <span className="font-mono text-slate-800">Nama Produk</span> dan <span className="font-mono text-slate-800">Jumlah</span> (satuan <strong>Pcs</strong>). Juga otomatis mengenali <span className="font-mono text-slate-800">Nama Barang</span> &amp; <span className="font-mono text-slate-800">Qty</span>.
+                    <strong>Template Barang Masuk:</strong> <span className="font-mono text-slate-800">Tanggal</span>, <span className="font-mono text-slate-800">No SO</span>, <span className="font-mono text-slate-800">Nama Barang</span>, <span className="font-mono text-slate-800">Qty</span> (satuan <strong>Pcs</strong>).
                   </li>
                   <li>
-                    <strong>Kolom Opsional:</strong> <span className="font-mono text-slate-800">No SO / PO</span>, <span className="font-mono text-slate-800">Tanggal / Tahun</span>, <span className="font-mono text-slate-800">Kategori</span>, <span className="font-mono text-slate-800">Stok Minimum</span>.
+                    <strong>Template Penjualan:</strong> <span className="font-mono text-slate-800">Nama Produk</span> dan <span className="font-mono text-slate-800">Jumlah</span> (satuan <strong>Pcs</strong>).
                   </li>
                   <li>
                     <strong>Format Rekap SO Per Hari:</strong> Baris pemisah <span className="font-mono text-slate-800">Tanggal: DD-MM-YYYY</span> &amp; baris <span className="font-mono text-slate-800">Subtotal/Grand Total</span> diproses otomatis tanpa duplikasi.
@@ -510,7 +510,7 @@ export const UploadExcelView: React.FC<UploadExcelViewProps> = ({
                   <Download className="w-3.5 h-3.5 text-emerald-600" />
                   <span>
                     {mode === 'barang_masuk'
-                      ? 'Unduh Template Barang Masuk (.xlsx)'
+                      ? 'Unduh Template Masuk (Tanggal, No SO, Nama Barang, Qty)'
                       : 'Unduh Template Penjualan (Nama Produk & Jumlah)'}
                   </span>
                 </button>

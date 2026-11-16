@@ -398,8 +398,30 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
     }
 
     // Determine row date and year (priority: per-row column date > section date)
-    const effectiveDate = rawColDate || currentSectionDate;
+    let effectiveDate: string | undefined = currentSectionDate;
     let effectiveYear = currentSectionYear;
+
+    if (detected.dateOrYearCol) {
+      const rawDateCell = rowObj[detected.dateOrYearCol];
+      if (typeof rawDateCell === 'number' && rawDateCell > 20000 && rawDateCell < 90000) {
+        const parsedSerial = XLSX.SSF.parse_date_code(rawDateCell);
+        if (parsedSerial && parsedSerial.y && parsedSerial.m && parsedSerial.d) {
+          const mm = String(parsedSerial.m).padStart(2, '0');
+          const dd = String(parsedSerial.d).padStart(2, '0');
+          effectiveDate = `${parsedSerial.y}-${mm}-${dd}`;
+          effectiveYear = parsedSerial.y;
+        }
+      } else if (rawColDate) {
+        const parsed = parseDateSection('Tanggal: ' + rawColDate);
+        if (parsed) {
+          effectiveDate = parsed.isoDate;
+          effectiveYear = parsed.year;
+        } else {
+          effectiveDate = rawColDate;
+        }
+      }
+    }
+
     if (effectiveDate && !effectiveYear) {
       const parsed = parseDateSection('Tanggal: ' + effectiveDate);
       if (parsed) effectiveYear = parsed.year;
@@ -493,58 +515,49 @@ function createGuideWorksheet() {
   return wsGuide;
 }
 
-// Download Excel Template for Incoming Goods (Also compatible with Sales Upload)
+// Download Excel Template for Incoming Goods (Tanggal, No SO, Nama Barang, Qty)
 export function downloadTemplateBarangMasuk() {
+  const todayStr = new Date().toISOString().split('T')[0];
   const sampleData = [
     {
-      'No Dokumen / PO': 'PO20261101',
-      'Nama Produk': 'Date Crown Black Sayer 500 Gr',
-      'Jumlah': 100,
-      'Kategori': 'Kurma',
-      'Stok Minimum': 15,
-      'Satuan': 'Pcs',
+      'Tanggal': todayStr,
+      'No SO': 'SO : 03078',
+      'Nama Barang': 'Date Crown Black Sayer 500 Gr',
+      'Qty': 100,
     },
     {
-      'No Dokumen / PO': 'PO20261101',
-      'Nama Produk': 'Date Crown Khenaizi 1 Kg',
-      'Jumlah': 80,
-      'Kategori': 'Kurma',
-      'Stok Minimum': 20,
-      'Satuan': 'Pcs',
+      'Tanggal': todayStr,
+      'No SO': 'SO : 03078',
+      'Nama Barang': 'Date Crown Khenaizi 1 Kg',
+      'Qty': 80,
     },
     {
-      'No Dokumen / PO': 'PO20261102',
-      'Nama Produk': 'Ajwa -Siafa- 400 Gram (Plastik Tub)',
-      'Jumlah': 50,
-      'Kategori': 'Kurma Premium',
-      'Stok Minimum': 10,
-      'Satuan': 'Pcs',
+      'Tanggal': todayStr,
+      'No SO': 'SO : 03079',
+      'Nama Barang': 'Ajwa -Siafa- 400 Gram (Plastik Tub)',
+      'Qty': 50,
     },
     {
-      'No Dokumen / PO': 'PO20261102',
-      'Nama Produk': 'Sunfruit Tangkai 500Gr Blue (Pcs)',
-      'Jumlah': 60,
-      'Kategori': 'Kurma',
-      'Stok Minimum': 15,
-      'Satuan': 'Pcs',
+      'Tanggal': todayStr,
+      'No SO': 'SO : 03079',
+      'Nama Barang': 'Sunfruit Tangkai 500Gr Blue (Pcs)',
+      'Qty': 60,
     },
     {
-      'No Dokumen / PO': 'PO20261103',
-      'Nama Produk': 'Deglet Nour Royal 500Gr (Pcs)',
-      'Jumlah': 90,
-      'Kategori': 'Kurma',
-      'Stok Minimum': 15,
-      'Satuan': 'Pcs',
+      'Tanggal': todayStr,
+      'No SO': 'SO : 03080',
+      'Nama Barang': 'Deglet Nour Royal 500Gr (Pcs)',
+      'Qty': 90,
     },
   ];
 
   const ws = XLSX.utils.json_to_sheet(sampleData);
-  ws['!cols'] = [{ wch: 18 }, { wch: 38 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 12 }];
+  ws['!cols'] = [{ wch: 14 }, { wch: 18 }, { wch: 42 }, { wch: 12 }];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Permintaan_Barang_Masuk');
+  XLSX.utils.book_append_sheet(wb, ws, 'Barang_Masuk');
   XLSX.utils.book_append_sheet(wb, createGuideWorksheet(), 'Panduan_Format');
-  XLSX.writeFile(wb, 'Template_Permintaan_Barang_Masuk.xlsx');
+  XLSX.writeFile(wb, 'Template_Barang_Masuk.xlsx');
 }
 
 // Download Excel Template for Sales / Outgoing Goods (Standard: Nama Produk & Jumlah; also compatible with Incoming Upload)
