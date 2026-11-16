@@ -824,15 +824,6 @@ export function deleteSingleMovement(movementId: string): {
   return { success: true, deletedMovement: target };
 }
 
-// Reset/Restore demo data (if user wants to intentionally re-test)
-export function resetAllDataToDefault() {
-  localStorage.removeItem(STORAGE_KEYS.CLEARED_FLAG);
-  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
-  localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(INITIAL_MOVEMENTS));
-  localStorage.setItem(STORAGE_KEYS.BATCHES, JSON.stringify(INITIAL_BATCHES));
-  localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
-}
-
 // Business Logic: Process Incoming Goods Excel
 export function applyIncomingGoodsBatch({
   rows,

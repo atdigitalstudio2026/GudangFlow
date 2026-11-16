@@ -23,7 +23,6 @@ import {
   getStoredNotifications,
   saveProducts,
   deleteSingleProduct,
-  resetAllDataToDefault,
   isSimulationCleared,
 } from './utils/storage';
 import { downloadTemplateBarangMasuk, downloadTemplateDataPenjualan } from './utils/excelParser';
@@ -37,7 +36,7 @@ import {
   syncMovementsBatchToFirestore,
   syncBatchToFirestore,
 } from './services/firestoreSync';
-import { RotateCcw, Lock } from 'lucide-react';
+import { Lock } from 'lucide-react';
 
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
@@ -177,18 +176,6 @@ function AppContent() {
     setActiveTab('inventaris');
   };
 
-  // Reset to default sample warehouse data
-  const handleResetData = () => {
-    if (
-      window.confirm(
-        'Apakah Anda yakin ingin mengatur ulang data gudang ke contoh data simulasi awal? Semua data mutasi dan berkas upload saat ini akan di-reset.'
-      )
-    ) {
-      resetAllDataToDefault();
-      refreshData();
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex font-sans">
       {/* Left Sidebar Navigation */}
@@ -203,7 +190,6 @@ function AppContent() {
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         onOpenClearModal={() => setIsClearModalOpen(true)}
-        onResetData={handleResetData}
       />
 
       {/* Right Workspace Column */}
@@ -349,7 +335,7 @@ function AppContent() {
               >
                 Template Data Penjualan
               </button>
-              {products.length > 0 ? (
+              {products.length > 0 && (
                 <button
                   onClick={() => setIsClearModalOpen(true)}
                   className="hover:text-rose-600 transition-colors flex items-center gap-1 font-medium text-rose-600/90"
@@ -357,15 +343,6 @@ function AppContent() {
                 >
                   <Lock className="w-3 h-3" />
                   <span>Hapus Data Simulasi</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleResetData}
-                  className="hover:text-indigo-600 transition-colors flex items-center gap-1"
-                  title="Muat ulang data simulasi jika diperlukan"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Muat Ulang Demo</span>
                 </button>
               )}
             </div>

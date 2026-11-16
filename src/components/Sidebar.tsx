@@ -9,7 +9,6 @@ import {
   FileClock,
   FileSpreadsheet,
   Lock,
-  RotateCcw,
   LogOut,
   X,
 } from 'lucide-react';
@@ -27,7 +26,6 @@ interface SidebarProps {
   isMobileOpen: boolean;
   onCloseMobile: () => void;
   onOpenClearModal: () => void;
-  onResetData: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -38,7 +36,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onCloseMobile,
   onOpenClearModal,
-  onResetData,
 }) => {
   const { user, login, logout } = useAuth();
 
@@ -181,11 +178,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        <div className="space-y-1 pt-4 border-t border-slate-200">
-          <div className="px-3 pb-1.5 text-[11px] font-semibold text-slate-400 tracking-wide">
-            Pengelolaan Data
-          </div>
-          {products.length > 0 ? (
+        {products.length > 0 && (
+          <div className="space-y-1 pt-4 border-t border-slate-200">
+            <div className="px-3 pb-1.5 text-[11px] font-semibold text-slate-400 tracking-wide">
+              Pengelolaan Data
+            </div>
             <button
               onClick={() => {
                 onCloseMobile();
@@ -197,20 +194,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Lock className="w-4 h-4 text-rose-600 shrink-0" />
               <span className="truncate">Hapus Data Simulasi</span>
             </button>
-          ) : (
-            <button
-              onClick={() => {
-                onCloseMobile();
-                onResetData();
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-indigo-700 hover:bg-indigo-50 transition-colors whitespace-nowrap"
-              title="Muat ulang data simulasi awal"
-            >
-              <RotateCcw className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span className="truncate">Muat Ulang Demo</span>
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom User & Firebase Account Footer */}
